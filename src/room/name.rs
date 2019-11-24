@@ -5,7 +5,7 @@ use ruma_identifiers::{EventId, RoomId, UserId};
 use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use serde_json::Value;
 
-use crate::{util::empty_string_as_none, Event as _, EventType,  InvalidInput, TryFromRaw};
+use crate::{util::empty_string_as_none, Event as _, EventType, InvalidInput, TryFromRaw};
 
 /// A human-friendly room name designed to be displayed to the end-user.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,26 +48,28 @@ impl TryFromRaw for NameEvent {
     type Err = InvalidInput;
 
     fn try_from_raw(raw: Self::Raw) -> Result<Self, (Self::Err, Self::Raw)> {
-
         let content_validation_error = content_invalid(&raw.content);
         let prev_content_validation_error = match raw.prev_content.as_ref() {
             None => None,
-            Some(c) => content_invalid(c)
+            Some(c) => content_invalid(c),
         };
 
         match (content_validation_error, prev_content_validation_error) {
             (Some(msg), _) | (_, Some(msg)) => Err((msg, raw)),
-            (None, None) =>
-                Ok(NameEvent {
-                    content: NameEventContent{name: raw.content.name},
-                    event_id: raw.event_id,
-                    origin_server_ts: raw.origin_server_ts,
-                    prev_content: raw.prev_content.map(|pc| NameEventContent{name: pc.name}),
-                    room_id: raw.room_id,
-                    sender: raw.sender,
-                    state_key: raw.state_key,
-                    unsigned: raw.unsigned,
-                })
+            (None, None) => Ok(NameEvent {
+                content: NameEventContent {
+                    name: raw.content.name,
+                },
+                event_id: raw.event_id,
+                origin_server_ts: raw.origin_server_ts,
+                prev_content: raw
+                    .prev_content
+                    .map(|pc| NameEventContent { name: pc.name }),
+                room_id: raw.room_id,
+                sender: raw.sender,
+                state_key: raw.state_key,
+                unsigned: raw.unsigned,
+            }),
         }
     }
 }
@@ -129,17 +131,19 @@ impl Serialize for NameEvent {
 
 impl_state_event!(NameEvent, NameEventContent, EventType::RoomName);
 
-fn content_name_invalid(name: &String) -> Option<InvalidInput> {
+fn content_name_invalid(name: &str) -> Option<InvalidInput> {
     match name.len() {
-        0 ..=255 =>  None,
-        _ => Some(InvalidInput("a room name cannot be more than 255 bytes".to_string()))
+        0..=255 => None,
+        _ => Some(InvalidInput(
+            "a room name cannot be more than 255 bytes".to_string(),
+        )),
     }
 }
 
 fn content_invalid(raw: &raw::NameEventContent) -> Option<InvalidInput> {
     match raw.name.as_ref() {
         None => None,
-        Some(name) => content_name_invalid(name)
+        Some(name) => content_name_invalid(name),
     }
 }
 
@@ -150,20 +154,23 @@ impl NameEventContent {
     ///
     /// `InvalidInput` will be returned if the name is more than 255 bytes.
     pub fn new(name: String) -> Result<Self, InvalidInput> {
-        NameEventContent::extract_from(name, |s| Some(s), |s| Some(s))
-            .map_err(|(err, _)| err)
+        NameEventContent::extract_from(name, |s| Some(s), Some).map_err(|(err, _)| err)
     }
 
     /// Try to create create a `NameEventContent` from something that owns the name
-    fn extract_from<T>(owner: T,
-                       ref_name: fn(&T) -> Option<&String>,
-                       take_name: fn(T) -> Option<String>) -> Result<(Self), (InvalidInput, T)> {
+    fn extract_from<T>(
+        owner: T,
+        ref_name: fn(&T) -> Option<&String>,
+        take_name: fn(T) -> Option<String>,
+    ) -> Result<Self, (InvalidInput, T)> {
         let empty: String = "".to_string();
         let name: &String = ref_name(&owner).unwrap_or(&empty);
         match content_name_invalid(name) {
             None if name.is_empty() => Ok(Self { name: None }),
-            None => Ok(Self{ name: take_name(owner) }) ,
-            Some(msg) =>  Err((msg, owner))
+            None => Ok(Self {
+                name: take_name(owner),
+            }),
+            Some(msg) => Err((msg, owner)),
         }
     }
 
@@ -294,9 +301,11 @@ mod tests {
         let long_string: String = String::from_iter(std::iter::repeat('X').take(256));
         assert_eq!(long_string.len(), 256);
 
-        let long_content_json_string: String = serde_json::json!({ "name": long_string.as_str()}).to_string();
+        let long_content_json_string: String =
+            serde_json::json!({ "name": long_string.as_str()}).to_string();
 
-        let from_raw : EventResult<NameEventContent> = serde_json::from_str(long_content_json_string.as_str()).unwrap();
+        let from_raw: EventResult<NameEventContent> =
+            serde_json::from_str(long_content_json_string.as_str()).unwrap();
 
         let result = from_raw.into_result();
         assert!(result.is_err(), "Result should be invalid: {:?}", result);
@@ -306,13 +315,20 @@ mod tests {
     fn json_with_empty_name_creates_content_as_none() {
         let long_content_json_string: String = serde_json::json!({ "name": ""}).to_string();
 
-        let from_raw : EventResult<NameEventContent> = serde_json::from_str(long_content_json_string.as_str()).unwrap();
-        assert_eq!(from_raw.into_result().unwrap(), NameEventContent{ name : None});
+        let from_raw: EventResult<NameEventContent> =
+            serde_json::from_str(long_content_json_string.as_str()).unwrap();
+        assert_eq!(
+            from_raw.into_result().unwrap(),
+            NameEventContent { name: None }
+        );
     }
 
     #[test]
     fn new_with_empty_name_creates_content_as_none() {
-        assert_eq!(NameEventContent::new("".to_string()).unwrap(), NameEventContent{ name : None});
+        assert_eq!(
+            NameEventContent::new("".to_string()).unwrap(),
+            NameEventContent { name: None }
+        );
     }
 
     #[test]
