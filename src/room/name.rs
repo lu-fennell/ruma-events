@@ -47,30 +47,40 @@ impl TryFromRaw for NameEvent {
     type Raw = raw::NameEvent;
     type Err = InvalidInput;
 
-    fn try_from_raw(raw: Self::Raw) -> Result<Self, (Self::Err, Self::Raw)> {
-        let content_validation_error = content_invalid(&raw.content);
-        let prev_content_validation_error = match raw.prev_content.as_ref() {
-            None => None,
-            Some(c) => content_invalid(c),
+    fn try_from_raw(mut raw: Self::Raw) -> Result<Self, (Self::Err, Self::Raw)> {
+        let content: NameEventContent = match TryFromRaw::try_from_raw(raw.content) {
+            Ok(c) => c,
+            Err((msg, raw_content)) => {
+                // put back `content`
+                raw.content = raw_content;
+                return Err((msg, raw));
+            }
         };
 
-        match (content_validation_error, prev_content_validation_error) {
-            (Some(msg), _) | (_, Some(msg)) => Err((msg, raw)),
-            (None, None) => Ok(NameEvent {
-                content: NameEventContent {
-                    name: raw.content.name,
-                },
-                event_id: raw.event_id,
-                origin_server_ts: raw.origin_server_ts,
-                prev_content: raw
-                    .prev_content
-                    .map(|pc| NameEventContent { name: pc.name }),
-                room_id: raw.room_id,
-                sender: raw.sender,
-                state_key: raw.state_key,
-                unsigned: raw.unsigned,
-            }),
-        }
+        let prev_content: Option<NameEventContent> = match raw.prev_content {
+            None => None,
+            Some(prev_content) => match TryFromRaw::try_from_raw(prev_content) {
+                Ok(c) => Some(c),
+                Err((msg, raw_content)) => {
+                    // put back `prev_content`
+                    raw.prev_content = Some(raw_content);
+                    // .. and `content`, from above
+                    raw.content = raw::NameEventContent { name: content.name };
+                    return Err((msg, raw));
+                }
+            },
+        };
+
+        Ok(NameEvent {
+            content,
+            event_id: raw.event_id,
+            origin_server_ts: raw.origin_server_ts,
+            prev_content,
+            room_id: raw.room_id,
+            sender: raw.sender,
+            state_key: raw.state_key,
+            unsigned: raw.unsigned,
+        })
     }
 }
 
